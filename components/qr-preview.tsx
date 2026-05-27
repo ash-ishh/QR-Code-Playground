@@ -12,6 +12,26 @@ function getExtension(path: string) {
   return 'png';
 }
 
+function escapeSvgText(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeSvgAttribute(value: string) {
+  return escapeSvgText(value).replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+function getSvgInnerContent(svgText: string) {
+  const withoutXmlDeclaration = svgText.replace(/^\s*<\?xml[\s\S]*?\?>\s*/i, '').trim();
+  const match = withoutXmlDeclaration.match(/^<svg\b[^>]*>([\s\S]*)<\/svg>\s*$/i);
+
+  if (match) return match[1];
+
+  return withoutXmlDeclaration.replace(/<\/?svg\b[^>]*>/gi, '');
+}
+
 export function buildQrOptions(design: QrDesign, size = design.exportSize): Partial<Options> {
   const hasLogo = Boolean(design.logoDataUrl);
   const imageOptions = {
@@ -108,15 +128,19 @@ export async function exportCompositionBlob(design: QrDesign, extension: 'png' |
     const stroke = design.foregroundColor;
     const rx = design.frameStyle === 'pill' ? 40 : design.frameStyle === 'soft' ? 28 : 14;
     const logoBg = bg === 'transparent' ? '#ffffff' : bg;
-    const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="${total}" height="${total + titleHeight}" viewBox="0 0 ${total} ${total + titleHeight}">
+    const safeStroke = escapeSvgAttribute(stroke);
+    const safeLogoBg = escapeSvgAttribute(logoBg);
+    const safeCtaText = escapeSvgText(design.ctaText);
+    const qrInnerSvg = getSvgInnerContent(qrText);
+    const svg = `<?xml version="1.0" standalone="no"?>
+      <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${total}" height="${total + titleHeight}" viewBox="0 0 ${total} ${total + titleHeight}">
         <rect width="100%" height="100%" fill="transparent" />
-        <rect x="6" y="6" width="${total - 12}" height="${total + titleHeight - 12}" rx="${rx}" fill="${logoBg}" stroke="${stroke}" stroke-width="4" opacity="0.98" />
-        ${design.ctaText ? `<text x="50%" y="52" text-anchor="middle" font-size="36" font-family="Inter, Arial, sans-serif" font-weight="700" fill="${stroke}">${design.ctaText}</text>` : ''}
-        <g transform="translate(${framePad}, ${titleHeight - 8})">${qrText.replace(/<\/?svg[^>]*>/g, '')}</g>
+        <rect x="6" y="6" width="${total - 12}" height="${total + titleHeight - 12}" rx="${rx}" fill="${safeLogoBg}" stroke="${safeStroke}" stroke-width="4" opacity="0.98" />
+        ${design.ctaText ? `<text x="50%" y="52" text-anchor="middle" font-size="36" font-family="Inter, Arial, sans-serif" font-weight="700" fill="${safeStroke}">${safeCtaText}</text>` : ''}
+        <g transform="translate(${framePad}, ${titleHeight - 8})">${qrInnerSvg}</g>
       </svg>
     `;
-    return new Blob([svg], { type: 'image/svg+xml' });
+    return new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
   }
 
   return qrBlob;
